@@ -65,7 +65,7 @@ CREATE TABLE [dbo].[category_definition_rules](
 	[id] [int] IDENTITY(1,1) NOT NULL,
 	[category_definition_id] [int] NOT NULL,
 	[rules_id] [int] NOT NULL,
-	[rule_argument1] [int] NULL,
+	[rule_argument1] [real] NULL,
 	[rule_argument2] [nvarchar](30) NULL
 ) ON [PRIMARY]
 

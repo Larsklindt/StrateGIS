@@ -125,18 +125,19 @@ BEGIN
 			SET @counter = @counter + 1
 		END
 	-- determine complete area for all featureclass features
-	DECLARE	@featureClassArea float = 0
-	EXEC	@featureClassArea = [dbo].[sp_DetermineLayerCompleteArea]
-		@TableName = @Category_output_layer_name,
-		@GeometryFieldName = 'geom'
-
-	-- update relative area calculations for complete category
-	DECLARE @SQLCalculateRelativeAreas nvarchar(max);
-	SET @SQLCalculateRelativeAreas = 'UPDATE ' + @Category_output_layer_name + ' SET category_item_percentage_overlap=(category_area_overlap/10000)*100, category_item_percentage_population=(category_area_overlap/@featureClassAreaIn)*100'
-	DECLARE @SQLCalculateRelativeAreasParmDefinition nvarchar(500);
-	SET @SQLCalculateRelativeAreasParmDefinition = '@featureClassAreaIn float';
-	-- execute the inline SQL statement, result is stored in tem table
-	exec sp_executesql @SQLCalculateRelativeAreas, @SQLCalculateRelativeAreasParmDefinition, @featureClassAreaIn = @featureClassArea;
+	-- create insert/update staement, using join expression from featurelayers square_id
+	DECLARE @SQLUpdateCategoryarea NVARCHAR(MAX)
+	SET @SQLUpdateCategoryarea = 'WITH CTE AS
+		(
+			SELECT ISNULL(SUM(category_area_overlap), 0) as featureclass_area
+			FROM ' + @Category_output_layer_name + '			
+		)
+		UPDATE ' + @Category_output_layer_name + '
+			SET category_item_percentage_overlap = (category_area_overlap/10000)*100,
+				category_item_percentage_population = (category_area_overlap/S.featureclass_area)*100
+		FROM ' + @Category_output_layer_name + ' P, CTE S
+	'
+	EXEC (@SQLUpdateCategoryarea)
 
 	-- return '1' as successfully completion
 	return 1

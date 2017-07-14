@@ -94,10 +94,11 @@ BEGIN
 	exec sp_executesql @SQLCreate_Input_RefInGeometryColumnsString, @create_Input_ref_ParmDefinition, @sridIn=@srid;
 
 	-- create refrence in geometry_columns table for output table
+	-- note output table name is always of polygon feature type
    DECLARE @SQLCreate_Output_RefInGeometryColumnsString NVARCHAR(MAX)
    SET @SQLCreate_Output_RefInGeometryColumnsString = 'IF (SELECT Count(*) FROM geometry_columns WHERE f_table_name=''' + @OutputTableName + ''') = 0' + 
 			'INSERT INTO geometry_columns (f_table_catalog, f_table_schema, f_table_name, f_geometry_column, coord_dimension, srid, geometry_type)' + 
-			'VALUES (''' + @db_name + ''', ''' + @schema_name + ''', ''' + @OutputTableName + ''', ''geom'', 2, @sridIn, ''' + @geomType + ''')'
+			'VALUES (''' + @db_name + ''', ''' + @schema_name + ''', ''' + @OutputTableName + ''', ''geom'', 2, @sridIn, ''POLYGON'')'
 	DECLARE @create_Output_ref_ParmDefinition nvarchar(500);
 	SET @create_Output_ref_ParmDefinition = '@sridIn int';
 	-- execute the inline SQL statement
@@ -117,6 +118,11 @@ BEGIN
 				@TableName = @FeatureClassName,
 				@GeometryFieldName = @GeomFieldName
 
+		-- SPECIAL case: set minimum area to 1 m2 for point and line feature types
+		if @featureClassArea < 1 AND (@geomType = 'Point' OR @geomType = 'LINESTRING')
+		BEGIN
+			SET @featureClassArea = 1
+		END
 		-- create feature id field, if not existing
 		DECLARE @SQLCreate_IDString NVARCHAR(MAX)
 		SET @SQLCreate_IDString = 'IF NOT EXISTS(SELECT *
@@ -202,59 +208,18 @@ BEGIN
 				-- specified table @OutputTableName
 				-- create temp table for holding all features ID's to traverse through table
 				-- drop previous temp table, if any
-				IF OBJECT_ID('tempdb..#tmpGroupedSquares') IS NOT NULL
-					DROP TABLE #tmpGroupedSquares
-
-				CREATE TABLE #tmpGroupedSquares(id int identity, square_id  nvarchar(30));
-				-- insert intersecting features
-				DECLARE @SQL_GroupSquares nvarchar(max) = 'INSERT INTO #tmpGroupedSquares Select square_id FROM ' + @OutputTableName + ' GROUP BY square_id HAVING COUNT(ID) > 1 order by COUNT(ID) desc'
-				-- execute the inline SQL statement, result is stored in tem table
-				exec sp_executesql @SQL_GroupSquares;
-
-				Select @max = COUNT(id) FROM #tmpGroupedSquares
-				Set @counter = 1
-				-- Loop through all squares having reference to more than one feature
-				-- in order to calculate the population density for this aggregate square
-				-- also include percentage of intersection in relation to the complete poppulation area
-				WHILE @counter <= @max
-					BEGIN
-						-- prepare declarations, calculations
-						-- and insertion in resulting table
-						DECLARE @square_id nvarchar(30)
-						SELECT @square_id = square_id FROM #tmpGroupedSquares WHERE id=@counter
-
-						-- determine complete overlap for this square
-						DECLARE @complete_overlap_square float
-						--SELECT @complete_overlap_square = Sum (area_overlap) FROM @FeatureClassName WHERE square_id=@square_id
-						-- fetch row count into variable @max
-						DECLARE @SQL_complete_overlap_square nvarchar(max) = 'SELECT @complete_overlap_squareOUT = Sum (area_overlap) FROM ' + @OutputTableName + ' WHERE square_id=@square_idIn'
-						DECLARE @complete_overlap_squareParmDefinition nvarchar(500);
-						SET @complete_overlap_squareParmDefinition = '@complete_overlap_squareOUT FLOAT OUTPUT, @square_idIn nvarchar(30)';
-						exec sp_executesql @SQL_complete_overlap_square, @complete_overlap_squareParmDefinition, @complete_overlap_squareOUT = @complete_overlap_square OUTPUT, @square_idIn = @square_id;
-
-						-- determine complete overlap for this square
-						-- !!! SQUARE IS HARDCODED FOR 100X100m
-						DECLARE @complete_percentage_overlap_square float
-						SET @complete_percentage_overlap_square = (@complete_overlap_square / 10000) * 100
-
-						-- determine complete overlap for this square
-						DECLARE @complete_percentage_population float
-						SELECT @complete_percentage_population = (@complete_overlap_square / @featureClassArea) * 100
-
-						-- update each element having more than one item into the same square
-						DECLARE @update_statement nvarchar(max)
-						DECLARE @update_statement_param_def nvarchar(max)
-						SET @update_statement = 'UPDATE ' + @OutputTableName + '
-												SET complete_overlap_square=@complete_overlap_squareIn,
-												complete_percentage_overlap_square=@complete_percentage_overlap_squareIn,
-												complete_percentage_population=@complete_percentage_populationIn
-												where square_id=@square_idIn'
-						SET @update_statement_param_def = '@complete_overlap_squareIn float, @complete_percentage_overlap_squareIn float, @complete_percentage_populationIn float, @square_idIn nvarchar(30)';
-						-- execute the inline SQL statement, in order to update output table prorperties
-						EXECUTE sp_executesql @update_statement, @update_statement_param_def, @complete_overlap_squareIn = @complete_overlap_square, @complete_percentage_overlap_squareIn = @complete_percentage_overlap_square, @complete_percentage_populationIn = @complete_percentage_population, @square_idIn = @square_id;
-
-						SET @counter = @counter + 1
-					END
+				WITH CTE AS
+				(
+					SELECT square_id, ISNULL(SUM(area_overlap), 0) as f_area, ISNULL(SUM(feature_score), 0) as f_score
+					FROM Skovrejs_Svb_analysis
+					GROUP BY square_id HAVING COUNT(ID) > 1
+				)
+				UPDATE Skovrejs_Svb_analysis
+					SET complete_overlap_square = f_area,
+					complete_percentage_overlap_square = (f_area / 10000) * 100,
+					complete_percentage_population = (f_area / @featureClassArea) * 100
+				FROM Skovrejs_Svb_analysis P
+				INNER JOIN CTE S ON S.square_id = P.square_id
 
 				-- apply rules to layer
 				-- ! first delete previous score, if any. !
@@ -292,7 +257,7 @@ BEGIN
 						DECLARE @category_definition_rules_identifier nvarchar(30)
 						SELECT @category_definition_rules_identifier = rules_id FROM #tmpRules WHERE id = @RuleCounter
 
-						DECLARE @layer_rule_argument_weight int = 0
+						DECLARE @layer_rule_argument_weight real = 0
 						-- find ruleargument, WEIGHT
 						SELECT @layer_rule_argument_weight = rule_argument1 FROM category_definition_rules INNER JOIN category_definition ON category_definition_rules.category_definition_id = category_definition.id WHERE category_definition_rules.id = @category_definition_rules_identifier
 

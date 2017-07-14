@@ -18,14 +18,14 @@ CREATE PROCEDURE [dbo].[sp_IntersectRule]
 	-- the weight of the rule
 	@FeatureClass nvarchar(30) = 'FeatureClass',
 	-- the weight of the rule
-	@WeightPercentage int = 100,
+	@WeightPercentage real = 100,
 	-- the weight of the rule
 	@IntersectionFeatureClass nvarchar(30) = 'IntersectionFeatureClass'
 AS
 BEGIN
-	DECLARE @WeightFloat float = 0
+	DECLARE @WeightReal real = 0
 	-- recalculate WeightPercentage into decimal multiplier
-	SELECT @WeightFloat = CAST( @WeightPercentage AS float) / 100
+	SELECT @WeightReal = @WeightPercentage / 100
 
 	-- check if field 'square_id exists
 	IF EXISTS(SELECT *
@@ -43,7 +43,7 @@ BEGIN
 			DECLARE @update_speedy_statement_param_def nvarchar(max)
 
 
-			SET @update_speedy_statement = 'UPDATE ' + @FeatureClass + ' SET ' + @FeatureClass + '.feature_score = ' + @FeatureClass + '.feature_score + t.s_fs * (' + @FeatureClass + '.item_percentage_overlap / 100) * @WeightFloatIn
+			SET @update_speedy_statement = 'UPDATE ' + @FeatureClass + ' SET ' + @FeatureClass + '.feature_score = ' + @FeatureClass + '.feature_score + t.s_fs * (' + @FeatureClass + '.item_percentage_overlap / 100) * @WeightRealIn
 												FROM  
 												(  
 												SELECT ' + @IntersectionFeatureClass + '.square_id as s_id, SUM(' + @IntersectionFeatureClass + '.feature_score) as s_fs
@@ -51,9 +51,9 @@ BEGIN
 												GROUP BY  ' + @IntersectionFeatureClass + '.square_id  
 												) t  
 												WHERE ' + @FeatureClass + '.square_id = t.s_id'
-			SET @update_speedy_statement_param_def = '@WeightFloatIn float';
+			SET @update_speedy_statement_param_def = '@WeightRealIn float';
 			-- execute the inline SQL statement, resulting sum is stored in @FeatureClass feature_score property
-			EXECUTE sp_executesql @update_speedy_statement, @update_speedy_statement_param_def, @WeightFloatIn = @WeightFloat;
+			EXECUTE sp_executesql @update_speedy_statement, @update_speedy_statement_param_def, @WeightRealIn = @WeightReal;
 
 		END
 		ELSE
@@ -99,11 +99,11 @@ BEGIN
 						DECLARE @update_statement nvarchar(max)
 						DECLARE @update_statement_param_def nvarchar(max)
 						SET @update_statement = 'UPDATE ' + @FeatureClass + '
-												SET feature_score = feature_score + ((item_percentage_overlap / 100) * @theScoreIn * @WeightFloatIn)
+												SET feature_score = feature_score + ((item_percentage_overlap / 100) * @theScoreIn * @WeightRealIn)
 												WHERE geom_square.STIntersects(@theIntersectionGeomIn) <> 0';
-						SET @update_statement_param_def = '@theScoreIn float, @theIntersectionGeomIn geometry, @WeightFloatIn float';
+						SET @update_statement_param_def = '@theScoreIn float, @theIntersectionGeomIn geometry, @WeightRealIn float';
 						-- execute the inline SQL statement, resulting geometry is stored in @inputGeometry parameter
-						EXECUTE sp_executesql @update_statement, @update_statement_param_def, @theScoreIn = @theScore, @theIntersectionGeomIn = @theIntersectionGeom, @WeightFloatIn = @WeightFloat;
+						EXECUTE sp_executesql @update_statement, @update_statement_param_def, @theScoreIn = @theScore, @theIntersectionGeomIn = @theIntersectionGeom, @WeightRealIn = @WeightReal;
 
 						SET @counter = @counter + 1
 					END

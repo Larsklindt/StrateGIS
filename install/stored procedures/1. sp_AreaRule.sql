@@ -18,19 +18,19 @@ CREATE PROCEDURE [dbo].[sp_AreaRule]
 	-- the weight of the rule
 	@FeatureClass nvarchar(30) = 'FeatureClass',
 	-- the weight of the rule
-	@WeightPercentage int = 100
+	@WeightPercentage real = 100
 AS
 BEGIN
 	-- SET NOCOUNT ON added to prevent extra result sets from
 	-- interfering with SELECT statements.
 	SET NOCOUNT ON;
-	DECLARE @WeightFloat float = 0	
+	DECLARE @WeightReal real = 0	
 	-- recalculate WeightPercentage into decimal multiplier
-	SELECT @WeightFloat = CAST( @WeightPercentage AS float) / 100
+	SELECT @WeightReal = @WeightPercentage / 100
 
-	DECLARE @theRuleSQL nvarchar(max) = 'UPDATE ' + @FeatureClass + ' SET feature_score=feature_score + (area_overlap * @WeightFloatIn)'
-	DECLARE @theRuleSQLParmDefinition nvarchar(500) = '@WeightFloatIn float';
+	DECLARE @theRuleSQL nvarchar(max) = 'UPDATE ' + @FeatureClass + ' SET feature_score=feature_score + (area_overlap * @WeightRealIn)'
+	DECLARE @theRuleSQLParmDefinition nvarchar(500) = '@WeightRealIn float';
 	-- execute the inline SQL statement, result is stored in tem table
-	exec sp_executesql @theRuleSQL, @theRuleSQLParmDefinition, @WeightFloatIn = @WeightFloat;
+	exec sp_executesql @theRuleSQL, @theRuleSQLParmDefinition, @WeightRealIn = @WeightReal;
 
 END

@@ -40,6 +40,15 @@ BEGIN
 	-- execute the inline SQL statement, resulting geometry is stored in @inputGeometry parameter
 	EXECUTE sp_executesql @findgeom_statement, @findgeom_param_def, @FeatureIdFieldValueIn = @FeatureIdFieldValue, @inputGeometryOut = @inputGeometry OUTPUT;
 
+	-- spatial geometry type for layer
+	DECLARE @geomType nvarchar(30)
+	DECLARE @SQL_Get_geomtype_String NVARCHAR(MAX)
+	SET @SQL_Get_geomtype_String = 'select distinct @geomTypeOUT = geom.MakeValid().STGeometryType() from ' + @TableName + ' where geom.MakeValid().STGeometryType() is not null'
+	DECLARE @geomParmDefinition nvarchar(500);
+	SET @geomParmDefinition = '@geomTypeOUT nvarchar(30) OUTPUT';
+	-- execute the inline SQL statement
+	exec sp_executesql @SQL_Get_geomtype_String, @geomParmDefinition, @geomTypeOUT=@geomType OUTPUT;
+
 	-- make geometry valid
 	if @inputGeometry.STIsValid() < 1
 		SET @inputGeometry = @inputGeometry.MakeValid()
@@ -83,12 +92,18 @@ BEGIN
 			
 			Declare @area_overlap float
 			set @area_overlap = @intersectionGeometry.STArea()
+
+			-- SPECIAL case: set minimum area to 1 m2 for point and line feature types
+			if @area_overlap = 0 AND (@geomType = 'Point' OR @geomType = 'LINESTRING')
+			BEGIN
+				SET @area_overlap = 1
+			END
 			
 			Declare @percentage_overlap float
-			set @percentage_overlap = (@intersectionGeometry.STArea() / @theSquareGeometry.STArea()) * 100
-			
+			set @percentage_overlap = (@area_overlap / @theSquareGeometry.STArea()) * 100
+
 			Declare @percentage_population float
-			set @percentage_population = (@intersectionGeometry.STArea() / @FeatureLayerCompleteArea) * 100
+			set @percentage_population = (@area_overlap / @FeatureLayerCompleteArea) * 100
 			
 			-- store geometry and calculated parameters into resulting table for the specified category
 			DECLARE @insert_statement nvarchar(max)

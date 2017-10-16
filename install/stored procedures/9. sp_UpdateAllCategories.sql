@@ -13,7 +13,7 @@ GO
 -- Updates the complete content of the category, based on a summation of scores  and overlaps from all layers assigned to this category.
 -- If the category does not exist, the category output table is created.
 -- The category output table name is specified in the 'category' table.
-ALTER PROCEDURE [dbo].[sp_UpdateAllCategories]
+CREATE PROCEDURE [dbo].[sp_UpdateAllCategories]
 AS
 BEGIN
 	-- SET NOCOUNT ON added to prevent extra result sets from

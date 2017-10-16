@@ -1,4 +1,6 @@
-/****** StoredProcedure sp_UpdateCategoryLayers Script Date: 19-06-2017 08:40:37 ******/
+USE [StrateGIS]
+GO
+/****** Object:  StoredProcedure [dbo].[sp_UpdateAllCategories]    Script Date: 16-10-2017 14:17:54 ******/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
@@ -6,10 +8,12 @@ GO
 -- =============================================
 -- Author:		Lars Klindt, Geopartner A/S
 -- Create date: 20170619
--- Description:	Createscript for sp_UpdateCategoryLayers, StrateGIS project
+-- Description:	sp_AreaRule, StrateGIS project
 -- =============================================
--- After update all categories, the complete sum of all categories can be calculated
-CREATE PROCEDURE [dbo].[sp_UpdateCategoryLayers] 
+-- Updates the complete content of the category, based on a summation of scores  and overlaps from all layers assigned to this category.
+-- If the category does not exist, the category output table is created.
+-- The category output table name is specified in the 'category' table.
+ALTER PROCEDURE [dbo].[sp_UpdateAllCategories]
 AS
 BEGIN
 	-- SET NOCOUNT ON added to prevent extra result sets from
@@ -25,6 +29,7 @@ BEGIN
 			[square_id] [nvarchar](30) NOT NULL,
 			[category_area_overlap] [float] NOT NULL,
 			[category_score] [float] NOT NULL,
+			[category_avg_score] [float] NULL,
 			[category_item_percentage_overlap] [float] NULL,
 			[category_item_percentage_population] [float] NULL,
 			[geom] [geometry] NOT NULL,
@@ -59,6 +64,7 @@ BEGIN
 	INSERT INTO #allCategoryTemp
 		SELECT category_output_layer_name
 		FROM category
+		WHERE includeInAllCategories=1
 		ORDER BY category_name DESC
 
 
@@ -76,20 +82,21 @@ BEGIN
 			DECLARE @SQLInsertUpdateCategory NVARCHAR(MAX)
 			SET @SQLInsertUpdateCategory = 'WITH CTE AS
 				(
-					SELECT square_id, ISNULL(SUM(category_area_overlap), 0) as cat_area, ISNULL(SUM(category_score), 0) as cat_score
+					SELECT square_id, ISNULL(SUM(category_area_overlap), 0) as cat_area, ISNULL(SUM(category_score), 0) as cat_score, ISNULL(SUM(category_avg_score), 0) as cat_avg_score
 					FROM ' + @theCategoryOutputLayerName + '
 					GROUP BY square_id
 				)
 				UPDATE All_Categories
 					SET All_Categories.category_area_overlap += cat_area,
-						All_Categories.category_score += cat_score
+						All_Categories.category_score += cat_score,
+						All_Categories.category_avg_score += cat_avg_score
 				FROM All_Categories P
 				INNER JOIN CTE S ON S.square_id = P.square_id
 				IF @@ROWCOUNT=0
 					BEGIN
 						INSERT INTO All_Categories
-						(P.square_id, P.category_area_overlap, P.category_score, geom)	
-						SELECT square_id, ISNULL(SUM(' + @theCategoryOutputLayerName + '.category_area_overlap), 0) as cat_area, ISNULL(SUM(' + @theCategoryOutputLayerName + '.category_score), 0) as cat_score, geometry::STGeomFromText(''LINESTRING (100 100, 20 180, 180 180)'', 25832)
+						(P.square_id, P.category_area_overlap, P.category_score, P.category_avg_score, geom)	
+						SELECT square_id, ISNULL(SUM(' + @theCategoryOutputLayerName + '.category_area_overlap), 0) as cat_area, ISNULL(SUM(' + @theCategoryOutputLayerName + '.category_score), 0) as cat_score, ISNULL(SUM(' + @theCategoryOutputLayerName + '.category_avg_score), 0) as cat_avg_score, geometry::STGeomFromText(''LINESTRING (100 100, 20 180, 180 180)'', 25832)
 							FROM ' + @theCategoryOutputLayerName + '
 							GROUP BY square_id
 						UPDATE P SET P.geom =  S.geom
@@ -99,8 +106,8 @@ BEGIN
 				ELSE
 					BEGIN
 						INSERT INTO All_Categories
-						(P.square_id, P.category_area_overlap, P.category_score, P.geom)	
-							SELECT ' + @theCategoryOutputLayerName + '.square_id, ISNULL(SUM(' + @theCategoryOutputLayerName + '.category_area_overlap), 0) as cat_area, ISNULL(SUM(' + @theCategoryOutputLayerName + '.category_score), 0) as cat_score, geometry::STGeomFromText(''LINESTRING (100 100, 20 180, 180 180)'', 25832)
+						(P.square_id, P.category_area_overlap, P.category_score, P.category_avg_score, P.geom)	
+							SELECT ' + @theCategoryOutputLayerName + '.square_id, ISNULL(SUM(' + @theCategoryOutputLayerName + '.category_area_overlap), 0) as cat_area, ISNULL(SUM(' + @theCategoryOutputLayerName + '.category_score), 0) as cat_score, ISNULL(SUM(' + @theCategoryOutputLayerName + '.category_avg_score), 0) as cat_avg_score, geometry::STGeomFromText(''LINESTRING (100 100, 20 180, 180 180)'', 25832)
 							FROM ' + @theCategoryOutputLayerName + '
 							LEFT JOIN All_Categories ON All_Categories.square_id = ' + @theCategoryOutputLayerName + '.square_id
 							WHERE All_Categories.square_id is NULL

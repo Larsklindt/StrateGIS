@@ -25,7 +25,9 @@ CREATE PROCEDURE [dbo].[sp_CalculateLayer]
 	-- input layer unique foreign key name (eg. 'fid', 'FID')
 	@GeomFieldName nvarchar(30) = 'geom',
 	-- input layer unique foreign key name (eg. 'fid', 'FID')
-	@RecalculateFeatures bit = false
+	@RecalculateFeatures bit = false,
+	-- Category Id. Makes a new Category Definition for that category
+	@CategoryId int = 'CategoryForDefinition' 
 AS
 
 BEGIN
@@ -281,6 +283,17 @@ BEGIN
 					END
 			END
 
+	BEGIN
+		INSERT INTO [dbo].[category_definition]
+           ([category_id]
+           ,[layer_name]
+           ,[output_layer_name])
+		VALUES
+           (@CategoryId
+           ,@FeatureClassName
+           ,@OutputTableName)
+
+	END
 	-- return '1' as successfully completion
 	return 1
 END
